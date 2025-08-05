@@ -12,10 +12,8 @@ def envsubst(input_dir: str):
     for file in directory:
         base_path = os.path.relpath(input_dir, ROOT_DIR)
         file_path = os.path.join(base_path, file)
-        print(f"Processing file: {file_path}")
 
         if os.path.isdir(file_path):
-            print(f"This is a directory, processing its contents.")
             envsubst(file_path)
 
         elif file.endswith(TEMPLATE_EXT):
@@ -23,13 +21,8 @@ def envsubst(input_dir: str):
             input_file = os.path.join(input_dir, file)
             output_file = os.path.join(input_dir, file.replace(TEMPLATE_EXT, ""))
             os.system(f"envsubst < {input_file} > {output_file}")
-            print(f"Substituted {input_file} to {output_file}")
             # delete the original file
             os.remove(input_file)
-            print(f"Deleted original file {input_file}")
-
-        else:
-            print(f"Skipping file: {file_path} (not a directory or template file)")
 
 
 def fnsubst(input_dir: str, project_name: str = None):
@@ -39,15 +32,17 @@ def fnsubst(input_dir: str, project_name: str = None):
         file_path = os.path.join(base_path, file)
 
         if os.path.isdir(file_path):
-            new_file_path = file_path.replace("PROJ_NAME", project_name)
-            os.rename(file_path, new_file_path)
-            print(f"Renamed file: {file_path} to {new_file_path}")
-            fnsubst(new_file_path, project_name)
+            if "PROJ_NAME" in file_path:
+                new_file_path = file_path.replace("PROJ_NAME", project_name)
+                os.rename(file_path, new_file_path)
+                fnsubst(new_file_path, project_name)
+                return
+            else:
+                fnsubst(file_path, project_name)
 
         if "PROJ_NAME" in file_path:
             new_file_path = file_path.replace("PROJ_NAME", project_name)
             os.rename(file_path, new_file_path)
-            print(f"Renamed file: {file_path} to {new_file_path}")
 
 
 def main():
@@ -67,18 +62,18 @@ def main():
     author_email = os.getenv("AUTHOR_EMAIL")
     organization = os.getenv("ORGANIZATION")
 
-    # print(f"Project Name: {project_name}")
-    # print(f"Project Version: {project_version}")
-    # print(f"Project Description: {project_desc}")
-    # print(f"Author: {author_first} {author_last}")
-    # print(f"Author Email: {author_email}")
-    # print(f"Organization: {organization}")
+    print(f"Project Name: {project_name}")
+    print(f"Project Version: {project_version}")
+    print(f"Project Description: {project_desc}")
+    print(f"Author: {author_first} {author_last}")
+    print(f"Author Email: {author_email}")
+    print(f"Organization: {organization}")
 
     if not project_name:
-        print("Project Name is required")
         return
 
     INPUT_DIRS = [
+        ROOT_DIR,
         os.path.join(ROOT_DIR, "examples"),
         os.path.join(
             ROOT_DIR,
@@ -91,10 +86,11 @@ def main():
 
     for input_dir in INPUT_DIRS:
         if not os.path.exists(input_dir):
-            print(f"Input directory {input_dir} does not exist.")
             return
-        # envsubst(input_dir)
+        envsubst(input_dir)
         fnsubst(input_dir, project_name.capitalize())
+
+    os.remove(env_file)
 
 
 if __name__ == "__main__":
