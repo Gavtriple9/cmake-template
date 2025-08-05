@@ -126,7 +126,9 @@ def main():
         envsubst(input_dir)
         fnsubst(input_dir, project_name)
 
+    # Remove the .env file and this script after processing
     os.remove(env_file)
+    os.remove(THIS_FILE)
 
 
 if __name__ == "__main__":
