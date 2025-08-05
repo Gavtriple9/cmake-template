@@ -32,15 +32,47 @@ def fnsubst(input_dir: str, project_name: str = None):
         file_path = os.path.join(base_path, file)
 
         if os.path.isdir(file_path):
-            if "PROJ_NAME" in file_path:
+            if "PROJ_NAME_LOWER" in file_path:
+                new_file_path = file_path.replace(
+                    "PROJ_NAME_LOWER", project_name.lower()
+                )
+                os.rename(file_path, new_file_path)
+                fnsubst(new_file_path, project_name)
+                continue
+            elif "PROJ_NAME_UPPER" in file_path:
+                new_file_path = file_path.replace(
+                    "PROJ_NAME_UPPER", project_name.upper()
+                )
+                os.rename(file_path, new_file_path)
+                fnsubst(new_file_path, project_name)
+                continue
+            elif "PROJ_NAME_CAPITAL" in file_path:
+                new_file_path = file_path.replace(
+                    "PROJ_NAME_CAPITAL", project_name.capitalize()
+                )
+                os.rename(file_path, new_file_path)
+                fnsubst(new_file_path, project_name)
+                continue
+            elif "PROJ_NAME" in file_path:
                 new_file_path = file_path.replace("PROJ_NAME", project_name)
                 os.rename(file_path, new_file_path)
                 fnsubst(new_file_path, project_name)
-                return
-            else:
-                fnsubst(file_path, project_name)
+                continue
 
-        if "PROJ_NAME" in file_path:
+            fnsubst(file_path, project_name)
+
+        if "PROJ_NAME_LOWER" in file_path:
+            new_file_path = file_path.replace("PROJ_NAME_LOWER", project_name.lower())
+            os.rename(file_path, new_file_path)
+        elif "PROJ_NAME_UPPER" in file_path:
+            new_file_path = file_path.replace("PROJ_NAME_UPPER", project_name.upper())
+            os.rename(file_path, new_file_path)
+        elif "PROJ_NAME_CAPITAL" in file_path:
+            new_file_path = file_path.replace(
+                "PROJ_NAME_CAPITAL", project_name.capitalize()
+            )
+            os.rename(file_path, new_file_path)
+        elif "PROJ_NAME" in file_path:
             new_file_path = file_path.replace("PROJ_NAME", project_name)
             os.rename(file_path, new_file_path)
 
@@ -74,7 +106,7 @@ def main():
 
     os.environ["PROJ_NAME_UPPER"] = project_name.upper()
     os.environ["PROJ_NAME_LOWER"] = project_name.lower()
-    os.environ["PROJ_NAME_CAPITALIZE"] = project_name.capitalize()
+    os.environ["PROJ_NAME_CAPITAL"] = project_name.capitalize()
 
     INPUT_DIRS = [
         ROOT_DIR,
