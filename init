@@ -87,8 +87,8 @@ def main():
                     os.environ[key] = value.replace('"', "")
 
     project_name = os.getenv("PROJ_NAME")
-    project_version = os.getenv("PROJECT_VERSION")
-    project_desc = os.getenv("PROJECT_DESC")
+    project_version = os.getenv("PROJ_VERSION")
+    project_desc = os.getenv("PROJ_DESC")
     author_first = os.getenv("AUTHOR_FIRST")
     author_last = os.getenv("AUTHOR_LAST")
     author_email = os.getenv("AUTHOR_EMAIL")
