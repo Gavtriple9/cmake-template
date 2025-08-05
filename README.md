@@ -11,8 +11,8 @@ git clone https://github.com/gavtriple9/CMake-Template.git && cd CMake-Template
 ```bash
 # .env
 PROJ_NAME="proj"
-PROJECT_VERSION="0.1.0"
-PROJECT_DESC="Template project"
+PROJ_VERSION="0.1.0"
+PROJ_DESC="Template project"
 AUTHOR_FIRST="Gavin"
 AUTHOR_LAST="Roberts"
 AUTHOR_EMAIL="gavinsroberts13@gmail.com"
