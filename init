@@ -396,20 +396,20 @@ def main():
 
     print("\n--- Cleanup ---")
     # Remove the .env file
-    # if os.path.exists(env_file):
-    #     try:
-    #         os.remove(env_file)
-    #         print(f"Removed {env_file}")
-    #     except OSError as e:
-    #         print(f"Error removing {env_file}: {e}", file=sys.stderr)
+    if os.path.exists(env_file):
+        try:
+            os.remove(env_file)
+            print(f"Removed {env_file}")
+        except OSError as e:
+            print(f"Error removing {env_file}: {e}", file=sys.stderr)
 
-    # # Remove this script itself
-    # if os.path.exists(THIS_FILE):
-    #     try:
-    #         os.remove(THIS_FILE)
-    #         print(f"Removed {THIS_FILE}")
-    #     except OSError as e:
-    #         print(f"Error removing {THIS_FILE}: {e}", file=sys.stderr)
+    # Remove this script itself
+    if os.path.exists(THIS_FILE):
+        try:
+            os.remove(THIS_FILE)
+            print(f"Removed {THIS_FILE}")
+        except OSError as e:
+            print(f"Error removing {THIS_FILE}: {e}", file=sys.stderr)
 
     print("\nProject setup complete!")
 
