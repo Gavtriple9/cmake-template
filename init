@@ -1,90 +1,359 @@
 #!/usr/bin/env python3
 
 import os
+import re
+import subprocess
+import sys
+import shutil  # For potential cleanup in case of errors
 
 THIS_FILE = os.path.abspath(__file__)
 ROOT_DIR = os.path.dirname(THIS_FILE)
-TEMPLATE_EXT = ".ini"
+TEMPLATE_EXT = ".ini"  # Files ending with this will have content substituted and lose the .ini extension
 
 
-def envsubst(input_dir: str):
-    directory = os.listdir(input_dir)
-    for file in directory:
-        base_path = os.path.relpath(input_dir, ROOT_DIR)
-        file_path = os.path.join(base_path, file)
+def load_env_vars(env_file_path: str):
+    """Loads environment variables from a .env file."""
+    if not os.path.exists(env_file_path):
+        print(f"Warning: .env file not found at {env_file_path}", file=sys.stderr)
+        return
 
-        if os.path.isdir(file_path):
-            envsubst(file_path)
+    print(f"Loading environment variables from: {env_file_path}")
+    with open(env_file_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                try:
+                    key, value = line.split("=", 1)
+                    os.environ[key.strip()] = value.strip().strip('"')  # Remove quotes
+                except ValueError:
+                    print(
+                        f"Warning: Skipping malformed line in .env: {line}",
+                        file=sys.stderr,
+                    )
 
-        elif file.endswith(TEMPLATE_EXT):
-            # Replace the variables in the file
-            input_file = os.path.join(input_dir, file)
-            output_file = os.path.join(input_dir, file.replace(TEMPLATE_EXT, ""))
-            os.system(f"envsubst < {input_file} > {output_file}")
-            # delete the original file
-            os.remove(input_file)
+
+def rename_placeholders_in_string(path_segment: str, project_name: str) -> str:
+    """
+    Applies name-based replacements to a path segment (filename or directory name).
+    Order of replacements matters to avoid partial matches (e.g., replace PROJ_NAME_LOWER before PROJ_NAME).
+    """
+    replacements = [
+        ("PROJ_NAME_LOWER", project_name.lower()),
+        ("PROJ_NAME_UPPER", project_name.upper()),
+        (
+            "PROJ_NAME_CAPITAL",
+            project_name.capitalize(),
+        ),  # or .title() for multi-word names
+        ("PROJ_NAME", project_name),
+    ]
+    for placeholder, replacement in replacements:
+        path_segment = path_segment.replace(placeholder, replacement)
+    return path_segment
 
 
-def fnsubst(input_dir: str, project_name: str = None):
-    directory = os.listdir(input_dir)
-    for file in directory:
-        base_path = os.path.relpath(input_dir, ROOT_DIR)
-        file_path = os.path.join(base_path, file)
+def substitute_file_content(filepath: str):
+    """
+    Substitutes environment variables in a file's content using envsubst or Python fallback
+    and renames the file by removing the TEMPLATE_EXT.
+    """
+    if not filepath.endswith(TEMPLATE_EXT):
+        return  # Not a template file for content substitution
 
-        if os.path.isdir(file_path):
-            if "PROJ_NAME_LOWER" in file_path:
-                new_file_path = file_path.replace(
-                    "PROJ_NAME_LOWER", project_name.lower()
+    output_filepath = filepath.replace(TEMPLATE_EXT, "")
+
+    print(
+        f"  Content processing: {os.path.basename(filepath)} -> {os.path.basename(output_filepath)}"
+    )
+
+    try:
+        # First try using envsubst
+        _substitute_with_envsubst(filepath, output_filepath)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        # Fallback to Python-based substitution
+        print(f"    Falling back to Python-based substitution...")
+        _substitute_with_python(filepath, output_filepath)
+
+    # Remove the original .ini file after successful substitution
+    try:
+        os.remove(filepath)
+    except FileNotFoundError:
+        # File might have already been removed if it was processed earlier
+        pass
+
+
+def _substitute_with_envsubst(filepath: str, output_filepath: str):
+    """Try to substitute using envsubst command."""
+    # These are the environment variables envsubst should process.
+    env_vars_to_substitute = [
+        "PROJ_NAME",
+        "PROJ_NAME_UPPER",
+        "PROJ_NAME_LOWER",
+        "PROJ_NAME_CAPITAL",
+        "PROJ_VERSION",
+        "PROJ_DESC",
+        "AUTHOR_FIRST",
+        "AUTHOR_LAST",
+        "AUTHOR_EMAIL",
+        "ORGANIZATION",
+    ]
+
+    # Format as a single string with $ prefixes, space-separated
+    envsubst_vars = " ".join(f"${var}" for var in env_vars_to_substitute)
+
+    # Try multiple possible paths for envsubst
+    envsubst_paths = [
+        "envsubst",
+        "/opt/homebrew/bin/envsubst",
+        "/usr/local/bin/envsubst",
+    ]
+
+    for envsubst_cmd in envsubst_paths:
+        try:
+            with open(filepath, "r", encoding="utf-8") as infile, open(
+                output_filepath, "w", encoding="utf-8"
+            ) as outfile:
+                subprocess.run(
+                    [envsubst_cmd, envsubst_vars],
+                    stdin=infile,
+                    stdout=outfile,
+                    check=True,
+                    text=True,
                 )
-                os.rename(file_path, new_file_path)
-                fnsubst(new_file_path, project_name)
-                continue
-            elif "PROJ_NAME_UPPER" in file_path:
-                new_file_path = file_path.replace(
-                    "PROJ_NAME_UPPER", project_name.upper()
-                )
-                os.rename(file_path, new_file_path)
-                fnsubst(new_file_path, project_name)
-                continue
-            elif "PROJ_NAME_CAPITAL" in file_path:
-                new_file_path = file_path.replace(
-                    "PROJ_NAME_CAPITAL", project_name.capitalize()
-                )
-                os.rename(file_path, new_file_path)
-                fnsubst(new_file_path, project_name)
-                continue
-            elif "PROJ_NAME" in file_path:
-                new_file_path = file_path.replace("PROJ_NAME", project_name)
-                os.rename(file_path, new_file_path)
-                fnsubst(new_file_path, project_name)
-                continue
+            return  # Success, exit function
+        except FileNotFoundError:
+            continue  # Try next path
+        except subprocess.CalledProcessError as e:
+            # If it's not a "command not found" error, re-raise
+            raise
 
-            fnsubst(file_path, project_name)
 
-        if "PROJ_NAME_LOWER" in file_path:
-            new_file_path = file_path.replace("PROJ_NAME_LOWER", project_name.lower())
-            os.rename(file_path, new_file_path)
-        elif "PROJ_NAME_UPPER" in file_path:
-            new_file_path = file_path.replace("PROJ_NAME_UPPER", project_name.upper())
-            os.rename(file_path, new_file_path)
-        elif "PROJ_NAME_CAPITAL" in file_path:
-            new_file_path = file_path.replace(
-                "PROJ_NAME_CAPITAL", project_name.capitalize()
+def _substitute_with_python(filepath: str, output_filepath: str):
+    """Python-based fallback for environment variable substitution."""
+    # Environment variables to substitute
+    env_vars = {
+        "PROJ_NAME": os.getenv("PROJ_NAME", ""),
+        "PROJ_NAME_UPPER": os.getenv("PROJ_NAME_UPPER", ""),
+        "PROJ_NAME_LOWER": os.getenv("PROJ_NAME_LOWER", ""),
+        "PROJ_NAME_CAPITAL": os.getenv("PROJ_NAME_CAPITAL", ""),
+        "PROJ_VERSION": os.getenv("PROJ_VERSION", ""),
+        "PROJ_DESC": os.getenv("PROJ_DESC", ""),
+        "AUTHOR_FIRST": os.getenv("AUTHOR_FIRST", ""),
+        "AUTHOR_LAST": os.getenv("AUTHOR_LAST", ""),
+        "AUTHOR_EMAIL": os.getenv("AUTHOR_EMAIL", ""),
+        "ORGANIZATION": os.getenv("ORGANIZATION", ""),
+    }
+
+    with open(filepath, "r", encoding="utf-8") as infile:
+        content = infile.read()
+
+    # Replace ${VAR} and $VAR patterns
+    for var_name, var_value in env_vars.items():
+        # Replace ${VAR_NAME} pattern
+        content = re.sub(rf"\$\{{{var_name}\}}", var_value, content)
+        # Replace $VAR_NAME pattern (only if followed by non-alphanumeric or end of string)
+        content = re.sub(rf"\${var_name}(?![a-zA-Z0-9_])", var_value, content)
+
+    with open(output_filepath, "w", encoding="utf-8") as outfile:
+        outfile.write(content)
+
+
+def process_project_structure(initial_target_dirs: list[str], project_name: str):
+    """
+    Orchestrates the templating process in multiple phases:
+    1. Determines final paths for all files/directories based on name placeholders.
+    2. Executes directory renames (highest-level first, moving contents atomically).
+    3. Executes file renames (for filenames with placeholders) and content substitution.
+    4. Cleans up any remaining empty original directories.
+    """
+
+    # Phase 1: Collect all *original* paths and determine their *final* desired names.
+    # This map will store old_absolute_path -> new_absolute_path for ALL items.
+    print("\nPhase 1: Collecting original paths and determining final names...")
+    all_original_items = []
+    for target_dir_root in initial_target_dirs:
+        if not os.path.exists(target_dir_root):
+            print(
+                f"Warning: Initial target directory not found, skipping: {target_dir_root}",
+                file=sys.stderr,
             )
-            os.rename(file_path, new_file_path)
-        elif "PROJ_NAME" in file_path:
-            new_file_path = file_path.replace("PROJ_NAME", project_name)
-            os.rename(file_path, new_file_path)
+            continue
+        for root, dirs, files in os.walk(target_dir_root):
+            for d in dirs:
+                all_original_items.append(os.path.join(root, d))
+            for f in files:
+                all_original_items.append(os.path.join(root, f))
+
+    # temp_translation_map: old_abs_path -> calculated_new_abs_path for every item
+    temp_translation_map = {}
+    for old_abs_path in all_original_items:
+        rel_path_from_root = os.path.relpath(old_abs_path, ROOT_DIR)
+        new_rel_path_segments = []
+        for segment in rel_path_from_root.split(os.sep):
+            new_rel_path_segments.append(
+                rename_placeholders_in_string(segment, project_name)
+            )
+        new_rel_path = os.path.join(*new_rel_path_segments)
+        temp_translation_map[old_abs_path] = os.path.join(ROOT_DIR, new_rel_path)
+
+    # final_renames_to_perform: This list will only contain renames for the highest-level
+    # directories/files. If a parent directory is renamed, its children move with it
+    # and don't need a separate entry here.
+    final_renames_to_perform = {}
+
+    # Sort items by depth (descending) to process deepest first.
+    # This helps identify if an item is a child of a higher-level rename.
+    sorted_old_paths = sorted(
+        temp_translation_map.keys(), key=lambda p: p.count(os.sep), reverse=True
+    )
+
+    for old_abs_path in sorted_old_paths:
+        new_abs_path = temp_translation_map[old_abs_path]
+
+        # If the path itself hasn't changed, skip.
+        if old_abs_path == new_abs_path:
+            continue
+
+        # Check if this path is a child of something already added to `final_renames_to_perform`.
+        # If its parent is already marked for renaming, then this item moves with its parent.
+        is_child_of_higher_level_rename = False
+        for parent_old_path in final_renames_to_perform.keys():
+            if os.path.isdir(parent_old_path) and old_abs_path.startswith(
+                parent_old_path + os.sep
+            ):
+                is_child_of_higher_level_rename = True
+                break
+
+        if not is_child_of_higher_level_rename:
+            final_renames_to_perform[old_abs_path] = new_abs_path
+
+    # Separate directories and files that need high-level renames
+    dirs_to_rename = []
+    files_to_rename_top_level = []  # These are files whose direct paths are changing
+
+    for old_path, new_path in final_renames_to_perform.items():
+        if os.path.isdir(old_path):
+            dirs_to_rename.append((old_path, new_path))
+        else:  # It's a file
+            files_to_rename_top_level.append((old_path, new_path))
+
+    # Sort directories by depth (descending) so deepest directories are renamed first.
+    # This ensures that when a parent dir is renamed, its children are *already* moved with it.
+    dirs_to_rename.sort(key=lambda item: item[0].count(os.sep), reverse=True)
+
+    print("\nPhase 2: Applying high-level directory renames...")
+    for old_dir_path, new_dir_path in dirs_to_rename:
+        if not os.path.exists(old_dir_path):
+            # This directory might have already been moved if a higher-level parent
+            # directory (which also matched a rename rule) was processed earlier.
+            continue
+
+        # Ensure the parent directory for the new path exists before renaming
+        os.makedirs(os.path.dirname(new_dir_path), exist_ok=True)
+
+        print(
+            f"  Renaming dir: {os.path.relpath(old_dir_path, ROOT_DIR)} -> {os.path.relpath(new_dir_path, ROOT_DIR)}"
+        )
+        try:
+            # Crucially: new_dir_path must NOT exist OR be an empty directory.
+            # Our logic ensures we only rename highest-level dirs, so this should hold.
+            os.rename(old_dir_path, new_dir_path)
+        except OSError as e:
+            if e.errno == 66:  # Directory not empty
+                print(
+                    f"FATAL ERROR: Target directory '{os.path.relpath(new_dir_path, ROOT_DIR)}' is not empty when attempting to rename '{os.path.relpath(old_dir_path, ROOT_DIR)}'. This indicates a critical logical flaw that should have been prevented. Exiting.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            else:
+                raise  # Re-raise any other OS errors
+
+    print("\nPhase 3: Renaming individual files and substituting content...")
+
+    # After directory renames, the file system structure has changed.
+    # We need to re-scan to get the *current* paths of files.
+
+    current_files_to_process = []
+    # Collect all files under the (possibly new) root directories
+    for target_dir_root_original in initial_target_dirs:
+        # Resolve the current actual path of `target_dir_root_original` if it was part of `dirs_to_rename`
+        current_root_for_walk = target_dir_root_original
+        for old_p, new_p in dirs_to_rename:
+            if old_p == target_dir_root_original:
+                current_root_for_walk = new_p
+                break
+
+        if not os.path.exists(current_root_for_walk):
+            print(
+                f"Warning: Current root for walk not found after renames: {current_root_for_walk}",
+                file=sys.stderr,
+            )
+            continue
+
+        for root, _, files in os.walk(current_root_for_walk):
+            for f in files:
+                current_files_to_process.append(os.path.join(root, f))
+
+    for current_filepath in current_files_to_process:
+        current_dirname = os.path.dirname(current_filepath)
+        current_basename = os.path.basename(current_filepath)
+
+        # Apply filename transformations
+        new_basename = rename_placeholders_in_string(current_basename, project_name)
+
+        final_filepath_after_name_change = os.path.join(current_dirname, new_basename)
+
+        # If the filename itself changed
+        if final_filepath_after_name_change != current_filepath:
+            print(
+                f"  Renaming file: {os.path.relpath(current_filepath, ROOT_DIR)} -> {os.path.relpath(final_filepath_after_name_change, ROOT_DIR)}"
+            )
+            try:
+                os.rename(current_filepath, final_filepath_after_name_change)
+                current_filepath = final_filepath_after_name_change  # Update path for next step (content substitution)
+            except Exception as e:
+                print(
+                    f"Error renaming file {os.path.relpath(current_filepath, ROOT_DIR)}: {e}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        # Perform content substitution if it's a template file
+        if current_filepath.endswith(TEMPLATE_EXT):
+            substitute_file_content(current_filepath)
+
+    print("\nPhase 4: Cleaning up empty old directories (if any were left)...")
+    # Recursively remove directories that are now empty.
+    # We need to iterate from deepest to shallowest for `os.rmdir`.
+
+    all_original_dirs_for_cleanup = []
+    for target_dir_root_original in initial_target_dirs:
+        if os.path.exists(target_dir_root_original) and os.path.isdir(
+            target_dir_root_original
+        ):
+            for root, dirs, _ in os.walk(target_dir_root_original):
+                for d in dirs:
+                    all_original_dirs_for_cleanup.append(os.path.join(root, d))
+
+    # Sort by depth (descending) to remove deepest directories first
+    all_original_dirs_for_cleanup.sort(key=lambda p: p.count(os.sep), reverse=True)
+
+    for d_path in all_original_dirs_for_cleanup:
+        if os.path.exists(d_path) and os.path.isdir(d_path):
+            try:
+                os.rmdir(d_path)  # Only removes empty directories
+                print(f"  Removed empty directory: {os.path.relpath(d_path, ROOT_DIR)}")
+            except OSError as e:
+                # errno 39 (Directory not empty) is expected if some files remain, or it's a renamed parent
+                if e.errno != 39:
+                    print(
+                        f"Warning: Could not remove directory {os.path.relpath(d_path, ROOT_DIR)}: {e}",
+                        file=sys.stderr,
+                    )
 
 
 def main():
     env_file = os.path.join(ROOT_DIR, ".env")
-    if os.path.exists(env_file):
-        with open(env_file) as f:
-            for line in f:
-                if line.strip() and not line.startswith("#"):
-                    key, value = line.strip().split("=", 1)
-                    os.environ[key] = value.replace('"', "")
+    load_env_vars(env_file)
 
     project_name = os.getenv("PROJ_NAME")
     project_version = os.getenv("PROJ_VERSION")
@@ -94,41 +363,55 @@ def main():
     author_email = os.getenv("AUTHOR_EMAIL")
     organization = os.getenv("ORGANIZATION")
 
-    print(f"Project Name: {project_name}")
-    print(f"Project Version: {project_version}")
-    print(f"Project Description: {project_desc}")
-    print(f"Author: {author_first} {author_last}")
-    print(f"Author Email: {author_email}")
-    print(f"Organization: {organization}")
+    print(f"\n--- Project Variables ---")
+    print(f"Project Name: {project_name or 'N/A'}")
+    print(f"Project Version: {project_version or 'N/A'}")
+    print(f"Project Description: {project_desc or 'N/A'}")
+    print(f"Author: {author_first or 'N/A'} {author_last or 'N/A'}")
+    print(f"Author Email: {author_email or 'N/A'}")
+    print(f"Organization: {organization or 'N/A'}")
+    print(f"-------------------------\n")
 
     if not project_name:
-        return
+        print(
+            "Error: PROJ_NAME environment variable is not set. Cannot proceed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
+    # Set derived environment variables (important for envsubst)
     os.environ["PROJ_NAME_UPPER"] = project_name.upper()
     os.environ["PROJ_NAME_LOWER"] = project_name.lower()
     os.environ["PROJ_NAME_CAPITAL"] = project_name.capitalize()
 
-    INPUT_DIRS = [
+    TARGET_DIRS_TO_PROCESS = [
         ROOT_DIR,
         os.path.join(ROOT_DIR, "examples"),
-        os.path.join(
-            ROOT_DIR,
-            "include",
-        ),
+        os.path.join(ROOT_DIR, "include"),
         os.path.join(ROOT_DIR, "src"),
         os.path.join(ROOT_DIR, "test"),
-        os.path.join(ROOT_DIR, "src"),
     ]
 
-    for input_dir in INPUT_DIRS:
-        if not os.path.exists(input_dir):
-            return
-        envsubst(input_dir)
-        fnsubst(input_dir, project_name)
+    process_project_structure(TARGET_DIRS_TO_PROCESS, project_name)
 
-    # Remove the .env file and this script after processing
-    os.remove(env_file)
-    os.remove(THIS_FILE)
+    print("\n--- Cleanup ---")
+    # Remove the .env file
+    # if os.path.exists(env_file):
+    #     try:
+    #         os.remove(env_file)
+    #         print(f"Removed {env_file}")
+    #     except OSError as e:
+    #         print(f"Error removing {env_file}: {e}", file=sys.stderr)
+
+    # # Remove this script itself
+    # if os.path.exists(THIS_FILE):
+    #     try:
+    #         os.remove(THIS_FILE)
+    #         print(f"Removed {THIS_FILE}")
+    #     except OSError as e:
+    #         print(f"Error removing {THIS_FILE}: {e}", file=sys.stderr)
+
+    print("\nProject setup complete!")
 
 
 if __name__ == "__main__":
