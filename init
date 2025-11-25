@@ -387,7 +387,6 @@ def main():
     TARGET_DIRS_TO_PROCESS = [
         ROOT_DIR,
         os.path.join(ROOT_DIR, "examples"),
-        os.path.join(ROOT_DIR, "include"),
         os.path.join(ROOT_DIR, "src"),
         os.path.join(ROOT_DIR, "test"),
     ]
